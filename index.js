@@ -4,9 +4,10 @@ const port = 3000;
 const supabase = require('./supabase');
 const jwt = require('jsonwebtoken');
 
-function gerarToken(nomeId) {
-  const segredo = '4a8c7b2e9f1d6e5a3c0b8e7f2d9a6c1b'; // Chave secreta para assinar o token
-  const token = jwt.sign({ id: nomeId }, segredo, { expiresIn: '1h' }); // Assina o token com o ID do usuário e define a expiração para 1 hora
+function gerarToken(email) {
+  const segredo = '4a8c7b2e9f1d6e5a3c0b8e7f2d9a6c1b';
+  const payload = { email: email }; // Incluindo o email no payload
+  const token = jwt.sign(payload, segredo);
   return token;
 }
 
@@ -61,10 +62,47 @@ app.delete('/deletar', async (req, res) => {
   }
 });
 
+app.patch('/alterar', async (req, res) => {
+  const { email, senha, novaSenha } = req.body;
+
+  try {
+    // Verifique se o usuário com o email e senha fornecidos existe no banco de dados.
+    const { data: users, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('email', email)
+      .eq('senha', senha);
+
+    if (error) {
+      throw new Error('Ocorreu um erro ao buscar o usuário');
+    }
+
+    if (users.length === 0) {
+      return res.status(404).send('Usuário não encontrado');
+    }
+
+    // Atualize a senha do usuário com a nova senha fornecida.
+    const { data: user, erro } = await supabase
+      .from('usuarios') // Use 'usuarios', pois a tabela parece ser 'usuarios', não 'usuario'.
+      .update({ 'senha': novaSenha })
+      .eq('email', email)
+      .eq('senha', senha); // Certifique-se de que a condição 'eq' corresponda aos dados existentes no banco de dados.
+
+    if (erro) {
+      throw new Error('Ocorreu um erro ao alterar o usuário');
+    }
+
+    res.send('Senha alterada com sucesso');
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+
 app.post('/entrar', async (req, res) => {
   const { email, senha } = req.body;
   const { data, error } = await supabase
-    .from('nomes')
+    .from('usuarios')
     .select('*')
     .eq('email', email)
     .eq('senha', senha)
@@ -75,13 +113,13 @@ app.post('/entrar', async (req, res) => {
     return res.status(500).json({ mensagem: 'Erro ao verificar as credenciais do usuário' });
   }
 
-  if (!data) {
+  if (data.length === 0) {
     // Se as credenciais não forem válidas, retorne um erro
     return res.status(401).json({ mensagem: 'Credenciais inválidas' });
   }
 
   // Se as credenciais forem válidas, gere um token de autenticação
-  const token = gerarToken(data.id);
+  const token = gerarToken(data.email);
 
   // Retorne o token de autenticação como resposta
   res.json({ token });
@@ -90,7 +128,7 @@ app.post('/entrar', async (req, res) => {
 app.get('/jogador/:id', async (req, res) => {
   const { id } = req.params;
   const { data, error } = await supabase
-    .from('nomes')
+    .from('usuarios')
     .select('*')
     .eq('id', id)
     .single();
